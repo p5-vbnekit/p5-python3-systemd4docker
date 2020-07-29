@@ -2,99 +2,125 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import copy
-import time
-import docker
 import threading
 
-
-class Defaults(object):
-    tmpfs = {"/run": "", "/run/lock": ""}
-
-    environment = {"container": "docker"}
-
-    volumes = {
-        "/dev/hugepages": {"bind": "/dev/hugepages", "mode": "ro"},
-        "/sys/fs/cgroup": {"bind": "/sys/fs/cgroup", "mode": "ro"}
-    }
+from . container import make as _make_container
+from . log_handler import execute as _execute_log_handler
+from . keep_alive import communicate as _keep_alive_routine
+from . keep_alive import is_guest_service_enabled as _is_keep_alive_guest_service_enabled
 
 
-def run(image, **kwargs):
-    _options = copy.deepcopy(kwargs)
+class Object(object):
+    class Strategy(object):
+        def __init__(self, created = None, started = None, stopped = None, finished = None):
+            super().__init__()
+            self.created = created
+            self.started = started
+            self.stopped = stopped
+            self.finished = finished
 
-    def _fix_option(name, defaults):
-        if name in _options:
-            _option = _options[name] = dict(_options[name])
-            for _key in defaults:
-                if not (_key in _option): _option[_key] = copy.deepcopy(defaults[_key])
-        else: _options[name] = copy.deepcopy(defaults)
+    class BasicStrategy(Strategy):
+        def __init__(self):
+            super().__init__()
 
-    _fix_option("tmpfs", Defaults.tmpfs)
-    _fix_option("environment", Defaults.environment)
-    _fix_option("volumes", Defaults.volumes)
+            _threads = []
+            _output_lock = threading.Lock()
 
-    _container = docker.from_env().containers.run(
-        image = image, command = None,
-        tty = True, stdout = False, stderr = False,
-        remove = True, detach = True, auto_remove = True,
-        **_options
-    )
+            # noinspection PyUnusedLocal
+            def _created(launcher, container):
+                def _make_output_delegate(stream):
+                    def _delegate(data):
+                        with _output_lock: stream.buffer.write(data)
 
-    try:
-        _flush_timeout = +1.0e+0
+                    return _delegate
 
-        class _ThreadContext(object):
-            def __init__(self):
-                super().__init__()
-                self.flush_barrier = None
-                self.event = threading.Condition()
+                def _make_flush_delegate(stream):
+                    def _delegate():
+                        with _output_lock: stream.flush()
 
-        _thread_context = _ThreadContext()
+                    return _delegate
 
-        def _make_stream_thread(input_stream, output_stream):
-            def _routine():
-                for _message in input_stream:
-                    with _thread_context.event:
-                        output_stream.write(_message)
-                        _thread_context.flush_barrier = time.monotonic() + _flush_timeout
-                        _thread_context.event.notify_all()
-            return threading.Thread(target = _routine, daemon = True)
+                _output_connections = (
+                    {
+                        "input_generator": container.attach(logs = True, stream = True, stdout = False, stderr = True),
+                        "output_delegate": _make_output_delegate(sys.stderr),
+                        "flush_delegate": _make_flush_delegate(sys.stderr)
+                    },
+                    {
+                        "input_generator": container.attach(logs = True, stream = True, stdout = True, stderr = False),
+                        "output_delegate": _make_output_delegate(sys.stdout),
+                        "flush_delegate": _make_flush_delegate(sys.stdout)
+                    }
+                )
 
-        def _flush_thread_routine():
-            with _thread_context.event:
-                while True:
-                    if _thread_context.flush_barrier is None: _thread_context.event.wait(_flush_timeout)
-                    if _thread_context.flush_barrier is None: continue
-                    if _thread_context.flush_barrier is False: break
-                    _timestamp = time.monotonic()
-                    if _thread_context.flush_barrier > _timestamp: _thread_context.event.wait(_thread_context.flush_barrier - _timestamp)
-                    if _thread_context.flush_barrier is False: break
-                    if _thread_context.flush_barrier is None: continue
-                    if _thread_context.flush_barrier > time.monotonic(): continue
-                    _thread_context.flush_barrier = None
-                    sys.stdout.flush()
-                    sys.stderr.flush()
+                def _make_thread():
+                    _thread = threading.Thread(target = lambda: _execute_log_handler(connections = _output_connections), daemon = False)
+                    _thread.start()
+                    return _thread
 
-        _threads = (
-            _make_stream_thread(input_stream = _container.logs(stream = True, stdout = True, stderr = False), output_stream = sys.stdout.buffer),
-            _make_stream_thread(input_stream = _container.logs(stream = True, stdout = False, stderr = True), output_stream = sys.stderr.buffer),
-            threading.Thread(target = _flush_thread_routine, daemon = False)
-        )
+                _threads.append(_make_thread())
+
+            # noinspection PyUnusedLocal
+            def _started(launcher, container):
+                if _is_keep_alive_guest_service_enabled(container):
+                    def _make_thread():
+                        _container_id = container.id
+                        _thread = threading.Thread(target = lambda: _keep_alive_routine(_container_id), daemon = False)
+                        _thread.start()
+                        return _thread
+                    _threads.append(_make_thread())
+
+            # noinspection PyUnusedLocal
+            def _finished(launcher, container):
+                for _thread in _threads:
+                    if _thread.is_alive(): _thread.join()
+
+            self.created = _created
+            self.started = _started
+            self.finished = _finished
+
+    def run(self, *args, **kwargs):
+        _strategy = self.__make_strategy(source = self.strategy)
 
         try:
-            for _thread in _threads: _thread.start()
-            _container.wait()
+            with _make_container(*args, **kwargs) as _container:
+                if not (_strategy.created is None): _strategy.created(self, _container)
+
+                _container.start()
+
+                if not (_strategy.started is None): _strategy.started(self, _container)
+
+                _container.wait()
+
+                if not (_strategy.stopped is None): _strategy.stopped(self, _container)
         finally:
-            _container.stop()
-            with _thread_context.event:
-                _thread_context.flush_barrier = False
-                _thread_context.event.notify_all()
-            for _thread in _threads: _thread.join()
+            if not (_strategy.finished is None): _strategy.finished(self, _container)
 
-    finally:
-        # noinspection PyBroadException
-        try:
-            _container.stop()
-            _container.wait()
-        except BaseException: pass
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
 
+    def __init__(self, strategy = None):
+        super().__init__()
+        self.strategy = self.__make_strategy(strategy)
+
+    @classmethod
+    def __make_strategy(cls, source):
+        if source is None: return cls.Strategy()
+        try: return cls.Strategy(**source)
+        except TypeError: pass
+        _strategy = cls.Strategy()
+        try: _strategy.created = source.created
+        except AttributeError: pass
+        try: _strategy.started = source.started
+        except AttributeError: pass
+        try: _strategy.stopped = source.stopped
+        except AttributeError: pass
+        try: _strategy.finished = source.finished
+        except AttributeError: pass
+        return _strategy
+
+
+def make(*args, **kwargs): return Object(*args, **kwargs)
+
+
+def run(*args, **kwargs): return make(strategy = Object.BasicStrategy()).run(*args, **kwargs)

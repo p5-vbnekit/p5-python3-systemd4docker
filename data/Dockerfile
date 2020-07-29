@@ -7,8 +7,20 @@ ENV container docker
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt update --assume-yes && apt full-upgrade --assume-yes
-RUN apt update --assume-yes && apt install --assume-yes systemd
+RUN apt update --assume-yes && apt install --assume-yes apt-utils
+RUN apt update --assume-yes && apt install --assume-yes systemd python3
+
+COPY usr/local/lib/systemd/system/p5-systemd4docker-keep_alive.service /usr/local/lib/systemd/system/p5-systemd4docker-keep_alive.service
+COPY usr/local/lib/p5/systemd4docker/keep_alive/main.py /usr/local/lib/p5/systemd4docker/keep_alive/main.py
+COPY usr/local/lib/p5/systemd4docker/keep_alive/touch.py /usr/local/lib/p5/systemd4docker/keep_alive/touch.py
+
+RUN chmod +x \
+    /usr/local/lib/p5/systemd4docker/keep_alive/main.py \
+    /usr/local/lib/p5/systemd4docker/keep_alive/touch.py
+
 RUN apt clean --assume-yes && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN systemctl enable p5-systemd4docker-keep_alive.service
 
 RUN systemctl disable \
     local-fs.target systemd-remount-fs.service \

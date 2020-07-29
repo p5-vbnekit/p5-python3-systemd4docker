@@ -1,0 +1,7 @@
+[Unit]
+Description = Wait for p5 systemd4docker example service
+Requisite = p5-systemd4docker-example.service
+After = p5-systemd4docker-example.service
+
+[Install]
+WantedBy = multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description = p5 systemd4docker example service
+
+[Service]
+Type = oneshot
+ExecStart = sleep 42
+RemainAfterExit = yes
+
+[Install]
+WantedBy = multi-user.target

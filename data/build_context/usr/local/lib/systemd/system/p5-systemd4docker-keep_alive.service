@@ -1,0 +1,9 @@
+[Unit]
+Description = p5 systemd4docker keep alive or shutdown service
+
+[Service]
+Type = simple
+ExecStart = /usr/local/lib/p5/systemd4docker/keep_alive/main.py
+
+[Install]
+WantedBy = sysinit.target
