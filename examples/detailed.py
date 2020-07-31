@@ -9,21 +9,17 @@ import threading
 
 from p5.systemd4docker.builder import build as _build_image
 from p5.systemd4docker.container import make as _make_container
+from p5.systemd4docker.keep_alive import execute as _keep_alive_routine
 from p5.systemd4docker.log_handler import execute as _execute_log_handler
-from p5.systemd4docker.keep_alive import communicate as _keep_alive_routine
 from p5.systemd4docker.dockerfile import path as _base_image_dockerfile_path
 from p5.systemd4docker.build_context import path as _base_image_build_context_path
 from p5.systemd4docker.utils import is_csi_escape_sequence_only as _is_csi_escape_sequence_only
-from p5.systemd4docker.keep_alive import is_guest_service_enabled as _is_keep_alive_guest_service_enabled
 
 
 def _main():
     def _print_message(message):
         print("{}: {}".format(__file__, message), file = sys.stderr)
         sys.stderr.flush()
-
-    docker.from_env().images.pull("debian:stable")
-    _print_message("docker pull for \"debian:stable\" was finished")
 
     def _make_build_log_delegate(prefix = None):
         def _result(message):
@@ -43,7 +39,7 @@ def _main():
             docker_options = dict(
                 tag = "p5/systemd4docker-debian",
                 path = _base_image_build_context_path, dockerfile = _base_image_dockerfile_path,
-                rm = True, pull = False, forcerm = True, custom_context = False
+                rm = True, pull = True, forcerm = True, custom_context = False
             ),
             log_delegate = _make_build_log_delegate(prefix = "base image build")
         )
@@ -106,14 +102,13 @@ def _main():
             def _print_message_with_lock(message):
                 with _output_lock: _print_message(message)
 
-            if _is_keep_alive_guest_service_enabled(_container):
-                def _make_keep_alive_thread():
-                    _container_id = _container.id
-                    _thread = threading.Thread(target = lambda: _keep_alive_routine(_container_id), daemon = False)
-                    _thread.start()
-                    return _thread
-                _threads.append(_make_keep_alive_thread())
-                _print_message_with_lock("keep_alive thread was started")
+            def _make_keep_alive_thread():
+                _container_id = _container.id
+                _thread = threading.Thread(target = lambda: _keep_alive_routine(_container_id), daemon = False)
+                _thread.start()
+                return _thread
+            _threads.append(_make_keep_alive_thread())
+            _print_message_with_lock("keep_alive thread was started")
 
             def _make_output_thread():
                 _thread = threading.Thread(target = lambda: _execute_log_handler(connections = _output_connections), daemon = False)

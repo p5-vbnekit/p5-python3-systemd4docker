@@ -1,0 +1,10 @@
+[Unit]
+Description = p5 systemd4docker keep alive or shutdown service socket
+PartOf = p5-systemd4docker-keep_alive.service
+
+[Socket]
+SocketMode = 0600
+ListenFIFO = /run/p5/systemd4docker/keep_alive.fifo
+
+[Install]
+WantedBy = sockets.target

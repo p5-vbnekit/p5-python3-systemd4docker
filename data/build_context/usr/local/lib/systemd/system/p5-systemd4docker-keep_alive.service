@@ -1,8 +1,12 @@
 [Unit]
 Description = p5 systemd4docker keep alive or shutdown service
+Requires = p5-systemd4docker-keep_alive.socket
 
 [Service]
 Type = simple
+StandardInput = socket
+StandardOutput = socket
+StandardError = journal
 ExecStart = /usr/local/lib/p5/systemd4docker/keep_alive/main.py
 
 [Install]

@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import docker
-import docker.errors
 
 from p5.systemd4docker.builder import build as _build_image
 from p5.systemd4docker.launcher import run as _run_container
@@ -13,9 +11,6 @@ def _main():
     def _print_message(message):
         print(message, file = sys.stderr)
         sys.stderr.flush()
-
-    docker.from_env().images.pull("debian:stable")
-    _print_message("docker pull for \"debian:stable\" was finished")
 
     def _build_log_delegate(message):
         sys.stderr.write(message)

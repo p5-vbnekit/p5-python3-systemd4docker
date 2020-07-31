@@ -20,7 +20,7 @@ class Defaults(object):
 def build(docker_options = None, log_delegate = None):
     if docker_options is None:
         return build(
-            docker_options = dict(tag = "p5/systemd4docker-debian", dockerfile = _base_image_dockerfile_path, path = _base_image_build_context_path),
+            docker_options = dict(tag = "p5/systemd4docker-debian", dockerfile = _base_image_dockerfile_path, path = _base_image_build_context_path, pull = True),
             log_delegate = log_delegate
         )
 

@@ -5,9 +5,8 @@ import sys
 import threading
 
 from . container import make as _make_container
+from . keep_alive import execute as _keep_alive_routine
 from . log_handler import execute as _execute_log_handler
-from . keep_alive import communicate as _keep_alive_routine
-from . keep_alive import is_guest_service_enabled as _is_keep_alive_guest_service_enabled
 
 
 class Object(object):
@@ -23,20 +22,21 @@ class Object(object):
         def __init__(self):
             super().__init__()
 
-            _threads = []
-            _output_lock = threading.Lock()
+            class _Context(object):
+                threads = []
+                output_lock = threading.Lock()
 
             # noinspection PyUnusedLocal
             def _created(launcher, container):
                 def _make_output_delegate(stream):
                     def _delegate(data):
-                        with _output_lock: stream.buffer.write(data)
+                        with _Context.output_lock: stream.buffer.write(data)
 
                     return _delegate
 
                 def _make_flush_delegate(stream):
                     def _delegate():
-                        with _output_lock: stream.flush()
+                        with _Context.output_lock: stream.flush()
 
                     return _delegate
 
@@ -58,21 +58,21 @@ class Object(object):
                     _thread.start()
                     return _thread
 
-                _threads.append(_make_thread())
+                _Context.threads.append(_make_thread())
 
             # noinspection PyUnusedLocal
             def _started(launcher, container):
-                if _is_keep_alive_guest_service_enabled(container):
-                    def _make_thread():
-                        _container_id = container.id
-                        _thread = threading.Thread(target = lambda: _keep_alive_routine(_container_id), daemon = False)
-                        _thread.start()
-                        return _thread
-                    _threads.append(_make_thread())
+                def _make_thread():
+                    _container_id = container.id
+                    def _routine(): _keep_alive_routine(_container_id)
+                    _thread = threading.Thread(target = _routine, daemon = False)
+                    _thread.start()
+                    return _thread
+                _Context.threads.append(_make_thread())
 
             # noinspection PyUnusedLocal
             def _finished(launcher, container):
-                for _thread in _threads:
+                for _thread in _Context.threads:
                     if _thread.is_alive(): _thread.join()
 
             self.created = _created
@@ -81,9 +81,10 @@ class Object(object):
 
     def run(self, *args, **kwargs):
         _strategy = self.__make_strategy(source = self.strategy)
+        _container = _make_container(*args, **kwargs)
 
         try:
-            with _make_container(*args, **kwargs) as _container:
+            with _container:
                 if not (_strategy.created is None): _strategy.created(self, _container)
 
                 _container.start()
