@@ -4,6 +4,13 @@
 import copy
 import docker
 import docker.errors
+import docker.models.containers
+
+
+def model(): return docker.models.containers
+
+
+def make_client(): return docker.from_env()
 
 
 class Object(object):
@@ -20,6 +27,9 @@ class Object(object):
         remove = True
 
         stop_signal = "SIGINT"
+
+    @property
+    def client(self): return self.__client
 
     @property
     def id(self): return self.__manipulate(lambda _api: _api.id)
@@ -78,11 +88,12 @@ class Object(object):
         self.__api = None
         self.__entered = 0
         self.__options = _options
+        self.__client = make_client()
 
     def __enter__(self):
         self.__entered += 1
         if 1 < self.__entered: return
-        self.__api = docker.from_env().containers.create(**self.__options)
+        self.__api = self.__client.containers.create(**self.__options)
         return self
 
     def __exit__(self, exception_type, exception_instance, exception_traceback):

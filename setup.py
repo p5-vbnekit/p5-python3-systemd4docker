@@ -72,7 +72,7 @@ setuptools.setup(
     name = "p5.systemd4docker",
     url = "",
     license = "",
-    version = "0.0.2",
+    version = "0.0.3",
     author = "p5-vbnekit",
     author_email = "vbnekit@gmail.com",
     package_dir = {"": "src"},

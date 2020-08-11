@@ -4,11 +4,12 @@
 import io
 import os
 import sys
-import docker
+import inspect
 import threading
 
 from p5.systemd4docker.builder import build as _build_image
 from p5.systemd4docker.container import make as _make_container
+from p5.systemd4docker.container import make_client as _make_client
 from p5.systemd4docker.keep_alive import execute as _keep_alive_routine
 from p5.systemd4docker.log_handler import execute as _execute_log_handler
 from p5.systemd4docker.dockerfile import path as _base_image_dockerfile_path
@@ -60,7 +61,7 @@ def _main():
 
     _image = _make_custom_image()
     _print_message("custom image was built: \"{}\"".format(_image))
-    docker.from_env().images.get(_image).tag("p5/systemd4docker-detailed_example:stable-{}".format(_image))
+    _make_client().images.get(_image).tag("p5/systemd4docker-detailed_example:stable-{}".format(_image))
 
     _threads = []
 
@@ -119,20 +120,25 @@ def _main():
             _print_message_with_lock("container output thread was started")
 
             def _is_example_service_enabled():
-                return 0 == _container.exec(
+                _arguments = dict(
                     cmd = "systemctl is-enabled p5-systemd4docker-example.service",
                     tty = False, stdin = False, stdout = True, stderr = True,
-                    detach = False, stream = False, socket = False, demux = False,
-                    privileged = False, user = "", environment = None, workdir = None
-                ).exit_code
-
-            def _exec_and_check(command, expected_return_code = 0):
-                _exec_result = _container.exec(
-                    cmd = command,
-                    tty = False, stdin = False, stdout = True, stderr = True,
-                    detach = False, stream = False, socket = False, demux = False,
+                    detach = False, stream = False, socket = False,
                     privileged = False, user = "", environment = None, workdir = None
                 )
+
+                if "demux" in inspect.signature(_container.client.containers.model.exec_run).parameters: _arguments["demux"] = False
+                return _container.exec(**_arguments).exit_code
+
+            def _exec_and_check(command, expected_return_code = 0):
+                _arguments = dict(
+                    cmd = command,
+                    tty = False, stdin = False, stdout = True, stderr = True,
+                    detach = False, stream = False, socket = False,
+                    privileged = False, user = "", environment = None, workdir = None
+                )
+                if "demux" in inspect.signature(_container.client.containers.model.exec_run).parameters: _arguments["demux"] = False
+                _exec_result = _container.exec(**_arguments)
                 _exit_code = _exec_result.exit_code
                 if expected_return_code != _exit_code:
                     _stream = io.StringIO()

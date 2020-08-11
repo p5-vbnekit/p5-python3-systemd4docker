@@ -6,7 +6,7 @@ ENV LC_ALL C
 ENV container docker
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt update --assume-yes && apt full-upgrade --assume-yes
+RUN apt-mark auto $(apt-mark showmanual)
 RUN apt update --assume-yes && apt install --assume-yes apt-utils
 RUN apt update --assume-yes && apt install --assume-yes systemd python3
 
@@ -19,8 +19,6 @@ RUN chmod +x \
     /usr/local/lib/p5/systemd4docker/keep_alive/main.py \
     /usr/local/lib/p5/systemd4docker/keep_alive/touch.py
 
-RUN apt clean --assume-yes && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 RUN systemctl enable p5-systemd4docker-keep_alive.service p5-systemd4docker-keep_alive.socket
 
 RUN systemctl disable \
@@ -31,6 +29,9 @@ RUN systemctl disable \
 RUN rm -f \
     /lib/systemd/system/multi-user.target.wants/getty.target \
     /lib/systemd/system/multi-user.target.wants/systemd-logind.service
+
+RUN apt update --assume-yes && apt full-upgrade --assume-yes
+RUN apt autoremove --purge --assume-yes && apt clean --assume-yes && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 VOLUME ["/sys/fs/cgroup", "/dev/hugepages", "/run", "/run/lock"]
 
